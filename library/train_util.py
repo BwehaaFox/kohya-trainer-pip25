@@ -1894,10 +1894,10 @@ def load_latents_from_disk(
 def save_latents_to_disk(npz_path, latents_tensor, original_size, crop_ltrb, flipped_latents_tensor=None):
     kwargs = {}
     if flipped_latents_tensor is not None:
-        kwargs["latents_flipped"] = flipped_latents_tensor.float().cpu().numpy()
+        kwargs["latents_flipped"] = flipped_latents_tensor.float().cuda().numpy()
     np.savez(
         npz_path,
-        latents=latents_tensor.float().cpu().numpy(),
+        latents=latents_tensor.float().cuda().numpy(),
         original_size=np.array(original_size),
         crop_ltrb=np.array(crop_ltrb),
         **kwargs,
@@ -2143,12 +2143,12 @@ def cache_batch_latents(
     img_tensors = img_tensors.to(device=vae.device, dtype=vae.dtype)
 
     with torch.no_grad():
-        latents = vae.encode(img_tensors).latent_dist.sample().to("cpu")
+        latents = vae.encode(img_tensors).latent_dist.sample().to("cuda")
 
     if flip_aug:
         img_tensors = torch.flip(img_tensors, dims=[3])
         with torch.no_grad():
-            flipped_latents = vae.encode(img_tensors).latent_dist.sample().to("cpu")
+            flipped_latents = vae.encode(img_tensors).latent_dist.sample().to("cuda")
     else:
         flipped_latents = [None] * len(latents)
 
@@ -2186,10 +2186,10 @@ def cache_batch_text_encoder_outputs(
             dtype,
         )
 
-        # cpu
-        b_hidden_state1 = b_hidden_state1.detach().to("cpu")  # b,n*75+2,768
-        b_hidden_state2 = b_hidden_state2.detach().to("cpu")  # b,n*75+2,1280
-        b_pool2 = b_pool2.detach().to("cpu")  # b,1280
+        # cuda
+        b_hidden_state1 = b_hidden_state1.detach().to("cuda")  # b,n*75+2,768
+        b_hidden_state2 = b_hidden_state2.detach().to("cuda")  # b,n*75+2,1280
+        b_pool2 = b_pool2.detach().to("cuda")  # b,1280
 
     for info, hidden_state1, hidden_state2, pool2 in zip(image_infos, b_hidden_state1, b_hidden_state2, b_pool2):
         if cache_to_disk:
@@ -2203,9 +2203,9 @@ def cache_batch_text_encoder_outputs(
 def save_text_encoder_outputs_to_disk(npz_path, hidden_state1, hidden_state2, pool2):
     np.savez(
         npz_path,
-        hidden_state1=hidden_state1.cpu().float().numpy(),
-        hidden_state2=hidden_state2.cpu().float().numpy(),
-        pool2=pool2.cpu().float().numpy(),
+        hidden_state1=hidden_state1.cuda().float().numpy(),
+        hidden_state2=hidden_state2.cuda().float().numpy(),
+        pool2=pool2.cuda().float().numpy(),
     )
 
 
@@ -2671,7 +2671,7 @@ def add_training_arguments(parser: argparse.ArgumentParser, support_dreambooth: 
     parser.add_argument(
         "--persistent_data_loader_workers",
         action="store_true",
-        help="persistent DataLoader workers (useful for reduce time gap between epoch, but may use more memory) / DataLoader  ()",
+        help="persistent DataLoader workers (useful for reduce time gap between epoch, but may use more memory) / DataLoader",
     )
     parser.add_argument("--seed", type=int, default=None, help="random seed for training / seed")
     parser.add_argument(
@@ -3592,7 +3592,7 @@ def prepare_dtype(args: argparse.Namespace):
     return weight_dtype, save_dtype
 
 
-def _load_target_model(args: argparse.Namespace, weight_dtype, device="cpu", unet_use_linear_projection_in_v2=False):
+def _load_target_model(args: argparse.Namespace, weight_dtype, device="cuda", unet_use_linear_projection_in_v2=False):
     name_or_path = args.pretrained_model_name_or_path
     name_or_path = os.readlink(name_or_path) if os.path.islink(name_or_path) else name_or_path
     load_stable_diffusion_format = os.path.isfile(name_or_path)  # determine SD or Diffusers
@@ -3602,7 +3602,7 @@ def _load_target_model(args: argparse.Namespace, weight_dtype, device="cpu", une
             args.v2, name_or_path, device, unet_use_linear_projection_in_v2=unet_use_linear_projection_in_v2
         )
     else:
-        # Diffusers model is loaded to CPU
+        # Diffusers model is loaded to cuda
         print(f"load Diffusers pretrained models: {name_or_path}")
         try:
             pipe = StableDiffusionPipeline.from_pretrained(name_or_path, tokenizer=None, safety_checker=None)
@@ -3658,7 +3658,7 @@ def load_target_model(args, weight_dtype, accelerator, unet_use_linear_projectio
             text_encoder, vae, unet, load_stable_diffusion_format = _load_target_model(
                 args,
                 weight_dtype,
-                accelerator.device if args.lowram else "cpu",
+                accelerator.device if args.lowram else "cuda",
                 unet_use_linear_projection_in_v2=unet_use_linear_projection_in_v2,
             )
 
@@ -4145,7 +4145,7 @@ def sample_images_common(
         print(f"No prompt file / : {args.sample_prompts}")
         return
 
-    org_vae_device = vae.device  # CPU
+    org_vae_device = vae.device  # cuda
     vae.to(device)
 
     # read prompts
